@@ -2,7 +2,7 @@ package de.sirywell.bitvectors;
 
 import java.io.PrintStream;
 
-public interface BitVector extends AutoCloseable {
+public sealed interface BitVector permits EfficientBitVector, NaiveBitVector {
 
     long rank(long index, int bit);
 
@@ -14,9 +14,6 @@ public interface BitVector extends AutoCloseable {
      * {@return the number of used bytes}
      */
     long memoryUsage();
-
-    @Override
-    void close();
 
     void print(PrintStream output);
 }

@@ -29,7 +29,7 @@ public final class MemorySupport {
         long value = 0;
         for (long l = start; l < end; l++) {
             int v = segment.getAtIndex(ValueLayout.JAVA_BYTE, l) - '0';
-            assert v >= 0 && v < radix : "illegal value at index " + l;
+            assert v >= 0 && v < radix : "illegal value at rank " + l;
             value = value * radix + v;
         }
         return value;

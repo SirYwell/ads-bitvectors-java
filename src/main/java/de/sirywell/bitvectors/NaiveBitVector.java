@@ -5,9 +5,7 @@ import jdk.incubator.vector.LongVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 
-import java.io.OutputStreamWriter;
 import java.io.PrintStream;
-import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -24,9 +22,9 @@ public record NaiveBitVector(MemorySegment segment, long bitSize) implements Bit
     @Override
     public long rank(long index, int bit) {
         assert (bit | 1) == 1 : "bit must be 0 or 1";
-        assert index >= 0 && index < segment.byteSize() * Byte.SIZE : "index must be in bounds";
+        assert index >= 0 && index < segment.byteSize() * Byte.SIZE : "rank must be in bounds";
         // we LOAD the vector byte wise - this allows us to directly exclude the last byte.
-        // the last byte requires an additional mask [0, index & 7] to not extract too many bits.
+        // the last byte requires an additional mask [0, rank & 7] to not extract too many bits.
         // to count bits, we convert to long vectors - this allows us to do BIT_COUNT on longs.
         // doing BIT_COUNT on bytes would run into limits if one lane encounters 8 * 256 = 2048 bits
         // but using long, the limit is 64 * 2^64 per lane
@@ -46,7 +44,7 @@ public record NaiveBitVector(MemorySegment segment, long bitSize) implements Bit
         }
         long ones = sum.reduceLanes(VectorOperators.ADD);
         byte last = segment.get(ValueLayout.JAVA_BYTE, targetByteIndex);
-        // take the lowest bits only, index is exclusive
+        // take the lowest bits only, rank is exclusive
         int inclusiveMask = ~(-1 << (index & 7));
         int add = Integer.bitCount(last & inclusiveMask);
         ones += add;
@@ -74,7 +72,7 @@ public record NaiveBitVector(MemorySegment segment, long bitSize) implements Bit
                             currentByteIndex,
                             nativeOrder(),
                             loadMask)
-                    .reinterpretAsLongs();
+                    .reinterpretAsLongs();o
             if (bit == 0) {
                 manyBits = manyBits.not();
             }
@@ -100,11 +98,6 @@ public record NaiveBitVector(MemorySegment segment, long bitSize) implements Bit
     @Override
     public long memoryUsage() {
         return segment.byteSize();
-    }
-
-    @Override
-    public void close() {
-
     }
 
     @Override

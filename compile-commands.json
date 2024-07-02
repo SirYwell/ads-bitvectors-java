@@ -1,0 +1,11 @@
+[
+    {
+        "match": [
+            "+*.EfficientBitVector"
+        ],
+        "inline": [
+            "+*::byteVector",
+            "+*::sumPairwise"
+        ]
+    }
+]

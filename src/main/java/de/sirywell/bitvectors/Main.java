@@ -11,7 +11,6 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.VarHandle;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -40,25 +39,35 @@ public class Main {
                 long vecEnd = MemorySupport.indexOf(file, vecStart, NEWLINE);
                 long vecLen = vecEnd - firstLineEnd - 1;
                 MemorySegment bitVectorSegment = loadBitVector(vecLen, arena, vecEnd, vecStart, file);
-                bitVector = new NaiveBitVector(bitVectorSegment, vecLen);
+                bitVector = EfficientBitVector.createEfficientBitVector(arena, bitVectorSegment, vecLen);
                 long instructionsStart = vecEnd + 1;
                 instructions = parseInstructions(instructionsStart, file, n);
                 file.unload();
             }
-            long[] results = new long[instructions.length];
-            try (bitVector) {
-                for (int stress = 0; stress < Integer.getInteger("ads.stress", 1); stress++) {
-                    for (int i = 0; i < instructions.length; i++) {
-                        results[i] = instructions[i].run(bitVector);
-                    }
-                    escape = results;
-                }
-            }
+            long[] results = runAll(instructions, bitVector);
             String collect = Arrays.stream(results)
                     .mapToObj(String::valueOf)
                     .collect(Collectors.joining(System.lineSeparator()));
             System.out.println(collect);
         }
+    }
+
+    private static long[] runAll(Instruction[] instructions, BitVector bitVector) {
+        long[] results = new long[instructions.length];
+        for (int stress = 0; stress < Integer.getInteger("ads.stress", 1); stress++) {
+            for (int i = 0; i < instructions.length; i++) {
+                // we don't use a polymorphic method here because C2 only inlines call sites with <= 2 types
+                // ref: https://shipilev.net/blog/2015/black-magic-method-dispatch/
+                // but we want optimizations to recognize bitVector as constant
+                results[i] = switch (instructions[i]) {
+                    case AccessInstruction(long index) -> bitVector.access(index);
+                    case RankInstruction(long index, int bit) -> bitVector.rank(index, bit);
+                    case SelectInstruction(long rank, int bit) -> bitVector.select(rank, bit);
+                };
+            }
+            escape = results;
+        }
+        return results;
     }
 
     private static MemorySegment loadBitVector(long vecLen, Arena arena, long vecEnd, long vecStart, MemorySegment file) {
