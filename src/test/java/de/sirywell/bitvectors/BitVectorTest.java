@@ -17,6 +17,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
+import java.util.stream.LongStream;
 import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
@@ -72,9 +73,12 @@ class BitVectorTest {
 
     @Test
     void testEfficientRankLarge() {
-        MemorySegment source = MemorySegment.ofArray(new Random(0).longs(13371337).toArray());
+        long[] array = new Random(0).longs(13371337).toArray();
+        // long[] array = LongStream.generate(() -> -1L).limit(13371337).toArray();
+        MemorySegment source = MemorySegment.ofArray(array);
         long ones = 0;
         EfficientBitVector vector = EfficientBitVector.createEfficientBitVector(Arena.ofAuto(), source, source.byteSize() * 8);
+
         for (int i = 0; i < vector.bitSize(); i++) {
             if (vector.access(i) == 1) {
                 ones++;
@@ -91,9 +95,13 @@ class BitVectorTest {
             }
             RankEvent event = new RankEvent(i);
             event.begin();
-            assertEquals(ones, vector.rank(i, 1), "at index " + i);
-            assertEquals(i - ones, vector.rank(i, 0));
+            check(ones, vector, i);
             event.commit();
         }
+    }
+
+    private static void check(long ones, EfficientBitVector vector, int i) {
+        assertEquals(ones, vector.rank(i, 1), "at index " + i);
+        assertEquals(i - ones, vector.rank(i, 0));
     }
 }
