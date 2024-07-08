@@ -15,6 +15,7 @@ import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.util.BitSet;
 
 import static de.sirywell.bitvectors.SimdSupport.BYTE_SPECIES;
@@ -45,7 +46,10 @@ record EfficientBitVector(MemorySegment segment, MemorySegment rankLookup, long 
             MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE).withName(RANK_BLOCK_OVERFLOW)
     );
     // we can initialize the layout with a large size to use it for any rank rankLookup segment
-    private static final SequenceLayout RANK_CACHE_LIST = MemoryLayout.sequenceLayout(Long.MAX_VALUE / CACHE_LAYOUT.byteSize(), CACHE_LAYOUT);
+    private static final SequenceLayout RANK_CACHE_LIST = MemoryLayout.sequenceLayout(
+            Long.MAX_VALUE / CACHE_LAYOUT.byteSize(),
+            CACHE_LAYOUT
+    );
     private static final VarHandle RANK_SUPER_BLOCK_VALUE_HANDLE = insertCoordinates(RANK_CACHE_LIST.varHandle(
             MemoryLayout.PathElement.sequenceElement(),
             MemoryLayout.PathElement.groupElement(RANK_SUPER_BLOCK_NAME)
@@ -55,18 +59,21 @@ record EfficientBitVector(MemorySegment segment, MemorySegment rankLookup, long 
             MemoryLayout.PathElement.groupElement(RANK_BLOCK_SEQUENCE_NAME),
             MemoryLayout.PathElement.sequenceElement()
     ), 1, 0);
-    private static final MethodHandle RANK_BLOCK_VALUE_OFFSET_HANDLE = insertArguments(RANK_CACHE_LIST.byteOffsetHandle(
-            MemoryLayout.PathElement.sequenceElement(),
-            MemoryLayout.PathElement.groupElement(RANK_BLOCK_SEQUENCE_NAME),
-            MemoryLayout.PathElement.sequenceElement()
-    ), 0, 0);
-    private static final MethodHandle RANK_BLOCK_OVERFLOW_BITSET_OFFSET_HANDLE = insertArguments(RANK_CACHE_LIST.byteOffsetHandle(
-            MemoryLayout.PathElement.sequenceElement(),
-            MemoryLayout.PathElement.groupElement(RANK_BLOCK_OVERFLOW)
-    ), 0, 0);
+    private static final MethodHandle RANK_BLOCK_VALUE_OFFSET_HANDLE = insertArguments(
+            RANK_CACHE_LIST.byteOffsetHandle(
+                    MemoryLayout.PathElement.sequenceElement(),
+                    MemoryLayout.PathElement.groupElement(RANK_BLOCK_SEQUENCE_NAME),
+                    MemoryLayout.PathElement.sequenceElement()
+            ), 0, 0);
+    private static final MethodHandle RANK_BLOCK_OVERFLOW_BITSET_OFFSET_HANDLE = insertArguments(
+            RANK_CACHE_LIST.byteOffsetHandle(
+                    MemoryLayout.PathElement.sequenceElement(),
+                    MemoryLayout.PathElement.groupElement(RANK_BLOCK_OVERFLOW)
+            ), 0, 0);
     private static final long RANK_SUPER_BLOCK_SIZE = 1 << 16; // in bits
     private static final long RANK_BLOCK_SIZE = 1 << 8; // in bits
     public static final ShortVector ZERO = ShortVector.zero(SimdSupport.SHORT_SPECIES);
+    public static final ByteOrder ORDER = nativeOrder();
 
     static EfficientBitVector createEfficientBitVector(Arena arena, MemorySegment segment, long bitSize) {
         long nOfSuperBlocks = Math.ceilDiv(bitSize, RANK_SUPER_BLOCK_SIZE);
@@ -82,8 +89,10 @@ record EfficientBitVector(MemorySegment segment, MemorySegment rankLookup, long 
             ) {
                 long offset = block / 8;
                 VectorMask<Byte> loadMask = BYTE_SPECIES.indexInRange(offset, segment.byteSize());
-                ByteVector vector = ByteVector.fromMemorySegment(BYTE_SPECIES, segment, offset, nativeOrder(), loadMask);
-                long unsignedBitCount = vector.reinterpretAsLongs().lanewise(VectorOperators.BIT_COUNT).reduceLanes(VectorOperators.ADD);
+                ByteVector vector = ByteVector.fromMemorySegment(BYTE_SPECIES, segment, offset, ORDER, loadMask);
+                long unsignedBitCount = vector.reinterpretAsLongs()
+                        .lanewise(VectorOperators.BIT_COUNT)
+                        .reduceLanes(VectorOperators.ADD);
                 if (unsignedBitCount == 256) {
                     overflow.set((int) local);
                 }
@@ -158,9 +167,12 @@ record EfficientBitVector(MemorySegment segment, MemorySegment rankLookup, long 
         long longsToProcess = blockBytesToProcess / Long.SIZE;
         long vectorBitMask = (1L << longsToProcess) - 1;
         VectorMask<Long> fullLongs = VectorMask.fromLong(LONG_SPECIES, vectorBitMask);
-        LongVector overflowLongs = LongVector.fromMemorySegment(LONG_SPECIES, rankLookup, overflowOffset, nativeOrder(), fullLongs).lanewise(VectorOperators.BIT_COUNT);
+        LongVector overflowLongs = LongVector
+                .fromMemorySegment(LONG_SPECIES, rankLookup, overflowOffset, ORDER, fullLongs)
+                .lanewise(VectorOperators.BIT_COUNT);
         long overflowBits = (1L << blockBytesToProcess % Long.SIZE) - 1;
-        int trailing = Long.bitCount(overflowBits & rankLookup.get(ValueLayout.JAVA_LONG, overflowOffset + longsToProcess * Long.BYTES));
+        long value = rankLookup.get(ValueLayout.JAVA_LONG, overflowOffset + longsToProcess * Long.BYTES);
+        int trailing = Long.bitCount(overflowBits & value);
         long overflow = (overflowLongs.reduceLanes(VectorOperators.ADD) + trailing) * 256;
         return (h.reduceLanes(VectorOperators.ADD) & 0xFFFF) + overflow;
     }
