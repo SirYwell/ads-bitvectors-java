@@ -14,11 +14,6 @@ import static java.nio.ByteOrder.nativeOrder;
 
 public record NaiveBitVector(MemorySegment segment, long bitSize) implements BitVector {
 
-    public NaiveBitVector {
-        // TODO we always have n * 8 byte currently
-        // assert Math.ceilDiv(bitSize, 8) == segment.byteSize() : "bit size must match byte size";
-    }
-
     @Override
     public long rank(long index, int bit) {
         assert (bit | 1) == 1 : "bit must be 0 or 1";
@@ -62,29 +57,6 @@ public record NaiveBitVector(MemorySegment segment, long bitSize) implements Bit
                 return i - 1;
             }
         }
-
-        /*long sum = 0;
-        for (long currentByteIndex = 0; currentByteIndex < bitSize / Byte.SIZE; currentByteIndex += SimdSupport.LONG_SPECIES.vectorByteSize()) {
-            VectorMask<Byte> loadMask = SimdSupport.BYTE_SPECIES.indexInRange(currentByteIndex, segment.byteSize());
-            LongVector manyBits = ByteVector.fromMemorySegment(
-                            SimdSupport.BYTE_SPECIES,
-                            segment,
-                            currentByteIndex,
-                            nativeOrder(),
-                            loadMask)
-                    .reinterpretAsLongs();o
-            if (bit == 0) {
-                manyBits = manyBits.not();
-            }
-            // need to sum directly sadly
-            long next = sum + manyBits.lanewise(VectorOperators.BIT_COUNT).reduceLanes(VectorOperators.ADD);
-            if (next > rank) {
-                // TODO binary search? linear??
-            }
-
-            sum = next;
-        }*/
-
         return -1;
     }
 

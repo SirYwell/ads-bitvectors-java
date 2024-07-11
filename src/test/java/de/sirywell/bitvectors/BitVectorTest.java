@@ -12,10 +12,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.lang.invoke.VarHandle;
 import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -74,15 +71,14 @@ class BitVectorTest {
     @Test
     void testEfficientRankLarge() {
         long[] array = new Random(0).longs(13371337).toArray();
+        // long[] array = new Random(0).longs(1337).toArray();
         // long[] array = LongStream.generate(() -> -1L).limit(13371337).toArray();
         MemorySegment source = MemorySegment.ofArray(array);
         long ones = 0;
-        EfficientBitVector vector = EfficientBitVector.createEfficientBitVector(Arena.ofAuto(), source, source.byteSize() * 8);
+        BitVector vector = EfficientBitVector.createEfficientBitVector(Arena.ofAuto(), source, source.byteSize() * 8);
+        // BitVector vector = new NaiveBitVector(source, source.byteSize() * 8);
 
         for (int i = 0; i < vector.bitSize(); i++) {
-            if (vector.access(i) == 1) {
-                ones++;
-            }
             @Category("BitVector")
             @Name("Rank")
             @Threshold("2000 ns")
@@ -95,12 +91,48 @@ class BitVectorTest {
             }
             RankEvent event = new RankEvent(i);
             event.begin();
-            check(ones, vector, i);
+            checkRank(ones, vector, i);
             event.commit();
+            if (vector.access(i) == 1) {
+                ones++;
+            }
+        }
+    }
+    @Test
+    void testEfficientSelectLarge() {
+        // long[] array = new Random(0).longs(1337133).toArray();
+        long[] array = LongStream.generate(() -> -1L).limit(1337133).toArray();
+        MemorySegment source = MemorySegment.ofArray(array);
+        long ones = 0;
+        EfficientBitVector vector = EfficientBitVector.createEfficientBitVector(Arena.ofAuto(), source, source.byteSize() * 8);
+
+        @Category("BitVector")
+        @Name("Select")
+        @Threshold("32000 ns")
+        class SelectEvent extends Event {
+            final long index;
+
+            SelectEvent(long index) {
+                this.index = index;
+            }
+        }
+        for (int i = 0; i < vector.bitSize(); i++) {
+            if (vector.access(i) == 1) {
+                ones++;
+                SelectEvent event = new SelectEvent(i);
+                event.begin();
+                checkSelect(ones, vector, i);
+                event.commit();
+            }
+
         }
     }
 
-    private static void check(long ones, EfficientBitVector vector, int i) {
+    private static void checkSelect(long ones, BitVector vector, int i) {
+        assertEquals(i, vector.select(ones, 1));
+    }
+
+    private static void checkRank(long ones, BitVector vector, int i) {
         assertEquals(ones, vector.rank(i, 1), "at index " + i);
         assertEquals(i - ones, vector.rank(i, 0));
     }

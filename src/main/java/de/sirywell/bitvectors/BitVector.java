@@ -10,6 +10,8 @@ public sealed interface BitVector permits EfficientBitVector, NaiveBitVector {
 
     int access(long index);
 
+    long bitSize();
+
     /**
      * {@return the number of used bytes}
      */
