@@ -12,8 +12,11 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -44,11 +47,14 @@ public class Main {
                 instructions = parseInstructions(instructionsStart, file, n);
                 file.unload();
             }
+            Instant start = Instant.now();
             long[] results = runAll(instructions, bitVector);
+            Duration duration = Duration.between(start, Instant.now());
             String collect = Arrays.stream(results)
                     .mapToObj(String::valueOf)
                     .collect(Collectors.joining(System.lineSeparator()));
-            System.out.println(collect);
+            Files.writeString(outputFile, collect);
+            System.out.println("RESULT name=hannes_greule time=" + duration.toMillis() + " space=" + bitVector.memoryUsage() * Byte.SIZE);
         }
     }
 
@@ -83,7 +89,7 @@ public class Main {
                 next >>>= (64 - vecLen);
             }
             // 7 6 5 4 3 2 1 0 15 14 13 12 11 10 9 8 ... 63 62 61 60 59 58 57 56
-            bitVectorSegment.setAtIndex(ValueLayout.JAVA_LONG, l, next);
+            bitVectorSegment.set(ValueLayout.JAVA_LONG, l / 8, next);
         }
         return bitVectorSegment;
     }
