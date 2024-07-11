@@ -336,7 +336,7 @@ record EfficientBitVector(
 
         // for simplicity, we just do binary search rank operations on this super block
         long l = lowerSuperBlockIndex * RANK_SUPER_BLOCK_SIZE;
-        long h = Math.min((lowerSuperBlockIndex + 1) * RANK_SUPER_BLOCK_SIZE, bitSize + 1); // exclusive
+        long h = Math.min((lowerSuperBlockIndex + 1) * RANK_SUPER_BLOCK_SIZE, bitSize); // exclusive
         while (l < h) {
             long c = l + ((h - l) >> 1);
             long r = rank(c, bit);
@@ -345,6 +345,9 @@ record EfficientBitVector(
             } else {
                 l = c + 1;
             }
+        }
+        if (l == bitSize) {
+            return -1;
         }
         if (rank(l, bit) != rank) {
             l--;

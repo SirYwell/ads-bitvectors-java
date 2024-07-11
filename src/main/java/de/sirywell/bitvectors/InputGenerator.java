@@ -37,7 +37,7 @@ public class InputGenerator {
                             .append(" ").append(String.valueOf(rng.nextLong(bvs)));
                     case 2 -> writer.append("select ")
                             .append(String.valueOf(rng.nextInt(2)))
-                            .append(" ").append(String.valueOf(rng.nextLong(bvs)));
+                            .append(" ").append(String.valueOf(rng.nextLong(1, bvs)));
                 }
                 writer.append("\n");
             }
