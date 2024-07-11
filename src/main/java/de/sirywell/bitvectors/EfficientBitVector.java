@@ -19,7 +19,6 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.BitSet;
 import java.util.function.LongBinaryOperator;
-import java.util.function.LongUnaryOperator;
 
 import static de.sirywell.bitvectors.SimdSupport.BYTE_SPECIES;
 import static de.sirywell.bitvectors.SimdSupport.LONG_SPECIES;
@@ -39,10 +38,10 @@ import static java.nio.ByteOrder.nativeOrder;
  * <p/>
  * Select is more tricky. We store level0 indexes in a list.
  *
- * @param segment
- * @param rankLookup
- * @param selectLookup
- * @param bitSize
+ * @param segment the actual bit vector data
+ * @param rankLookup the rank lookup data
+ * @param selectLookup the select lookup data
+ * @param bitSize the number of bits the bit vector consists of
  */
 record EfficientBitVector(
         MemorySegment segment,
@@ -142,6 +141,8 @@ record EfficientBitVector(
                     overflow.set((int) local);
                 }
                 RANK_BLOCK_VALUE_HANDLE.set(rankLookup, superBlock, local, (byte) unsignedBitCount);
+                // check if we just "overflowed" one of the rank sizes
+                // if so, write superBlock index
                 long n = onesSum + unsignedBitCount;
                 if (onesSum / RANK_SUPER_BLOCK_SIZE != n / RANK_SUPER_BLOCK_SIZE) {
                     setSelect(1, selectOneIndex, selectLookup, superBlock);
@@ -181,11 +182,11 @@ record EfficientBitVector(
         assert index >= 0 && index < segment.byteSize() * Byte.SIZE : "index must be in bounds";
         long superBlockIndex = index / RANK_SUPER_BLOCK_SIZE;
         long remainingBitsInSuperBlock = index % RANK_SUPER_BLOCK_SIZE;
-        long onesBefore = superBlockValue(superBlockIndex);
+        long onesBefore = superBlockOnes(superBlockIndex);
 
-        onesBefore += sumBlocksUntil(superBlockIndex, remainingBitsInSuperBlock);
+        onesBefore += sumBlocksInSuperBlockUntil(superBlockIndex, remainingBitsInSuperBlock);
         long targetByteIndex = index / Byte.SIZE; // flooring div
-        onesBefore += countBits(targetByteIndex, index / RANK_BLOCK_SIZE);
+        onesBefore += countBitsInBlock(targetByteIndex, index / RANK_BLOCK_SIZE);
         byte last = segment.get(ValueLayout.JAVA_BYTE, targetByteIndex);
         // take the lowest bits only, but rank is exclusive
         int inclusiveMask = ~(-1 << (index & 7));
@@ -197,11 +198,11 @@ record EfficientBitVector(
         return ones;
     }
 
-    private long superBlockValue(long superBlockIndex) {
+    private long superBlockOnes(long superBlockIndex) {
         return (long) RANK_SUPER_BLOCK_VALUE_HANDLE.get(this.rankLookup, superBlockIndex);
     }
 
-    private long countBits(long lastIncludedByteIndex, long actualBlockPos) {
+    private long countBitsInBlock(long lastIncludedByteIndex, long actualBlockPos) {
         long blockIndex = actualBlockPos * BYTE_SPECIES.vectorByteSize();
         VectorMask<Byte> loadMask = BYTE_SPECIES.indexInRange(blockIndex, lastIncludedByteIndex);
         LongVector manyBits = ByteVector.fromMemorySegment(
@@ -215,7 +216,7 @@ record EfficientBitVector(
         return manyBits.lanewise(VectorOperators.BIT_COUNT).reduceLanes(VectorOperators.ADD);
     }
 
-    private long sumBlocksUntil(long superBlockIndex, long remainingBitsInSuperBlock) {
+    private long sumBlocksInSuperBlockUntil(long superBlockIndex, long remainingBitsInSuperBlock) {
         long offset = valueOffsetStart(superBlockIndex);
         long blockBytesToProcess = remainingBitsInSuperBlock / RANK_BLOCK_SIZE; // exclusive bound
         ShortVector h = ZERO;
@@ -279,14 +280,14 @@ record EfficientBitVector(
         }
         while (lowerSuperBlockIndex < upperSuperBlockIndex) {
             long c = lowerSuperBlockIndex + ((upperSuperBlockIndex - lowerSuperBlockIndex) >> 1);
-            if (toRank.applyAsLong(superBlockValue(c), c) >= rank) {
+            if (toRank.applyAsLong(superBlockOnes(c), c) >= rank) {
                 upperSuperBlockIndex = c;
             } else {
                 lowerSuperBlockIndex = c + 1;
             }
         }
         if (lowerSuperBlockIndex > bitSize / RANK_SUPER_BLOCK_SIZE
-            || toRank.applyAsLong(superBlockValue(lowerSuperBlockIndex), lowerSuperBlockIndex) >= rank) {
+            || toRank.applyAsLong(superBlockOnes(lowerSuperBlockIndex), lowerSuperBlockIndex) >= rank) {
             lowerSuperBlockIndex--;
         }
 

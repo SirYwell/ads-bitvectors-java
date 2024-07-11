@@ -8,6 +8,9 @@ import java.nio.file.Path;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 
+/**
+ * Generator for the inputs used in the document. All mentioned inputs were generated with seed 42.
+ */
 public class InputGenerator {
 
     public static void main(String[] args) throws IOException {
@@ -15,6 +18,7 @@ public class InputGenerator {
         int instr = Integer.parseInt(console.readLine("Instructions: "));
         long bvs = Long.parseLong(console.readLine("Bit Vector Size: "));
         String seed = console.readLine("Seed: ");
+        int instructionMode = Integer.parseInt(console.readLine("Instruction Mode (-1: All, 0: Access, 1: Rank, 2: Select): "));
         String fileName = console.readLine("File Name: ");
 
         RandomGenerator rng = RandomGeneratorFactory.getDefault().create(seed.getBytes(StandardCharsets.UTF_8));
@@ -26,7 +30,7 @@ public class InputGenerator {
             }
             writer.write("\n");
             for (int i = 0; i < instr; i++) {
-                switch (rng.nextInt(3)) {
+                switch (instructionMode == -1 ? rng.nextInt(3) : instructionMode) {
                     case 0 -> writer.append("access ").append(String.valueOf(rng.nextLong(bvs)));
                     case 1 -> writer.append("rank ")
                             .append(String.valueOf(rng.nextInt(2)))

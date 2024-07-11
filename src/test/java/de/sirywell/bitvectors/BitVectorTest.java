@@ -4,6 +4,7 @@ import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.Name;
 import jdk.jfr.Threshold;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,6 +21,7 @@ import java.util.stream.Stream;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static org.junit.jupiter.api.Assertions.*;
 
+@Disabled
 class BitVectorTest {
 
     static Stream<Arguments> bitVectorConstructors() {

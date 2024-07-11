@@ -18,13 +18,6 @@ public final class MemorySupport {
         return -1;
     }
 
-    /**
-     *
-     * @param segment
-     * @param start
-     * @param end exclusive
-     * @return
-     */
     public static long parseLong(MemorySegment segment, long start, long end, int radix) {
         long value = 0;
         for (long l = start; l < end; l++) {

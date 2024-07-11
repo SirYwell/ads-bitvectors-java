@@ -29,8 +29,9 @@ public class Main {
         Path inputFile = Path.of(args[0]);
         Path outputFile = Path.of(args[1]);
         try (Arena arena = Arena.ofConfined()) {
-            BitVector bitVector;
+            MemorySegment bitVectorSegment;
             Instruction[] instructions;
+            long vecLen;
             try (FileChannel fileChannel = FileChannel.open(inputFile, StandardOpenOption.READ)) {
                 MemorySegment file = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size(), arena);
                 long firstLineEnd = MemorySupport.indexOf(file, 0, NEWLINE);
@@ -40,14 +41,14 @@ public class Main {
                 // or dynamically increase the size of the bitvector...
                 // let's do the former
                 long vecEnd = MemorySupport.indexOf(file, vecStart, NEWLINE);
-                long vecLen = vecEnd - firstLineEnd - 1;
-                MemorySegment bitVectorSegment = loadBitVector(vecLen, arena, vecEnd, vecStart, file);
-                bitVector = EfficientBitVector.createEfficientBitVector(arena, bitVectorSegment, vecLen);
+                vecLen = vecEnd - firstLineEnd - 1;
+                bitVectorSegment = loadBitVector(vecLen, arena, vecEnd, vecStart, file);
                 long instructionsStart = vecEnd + 1;
                 instructions = parseInstructions(instructionsStart, file, n);
                 file.unload();
             }
             Instant start = Instant.now();
+            BitVector bitVector = EfficientBitVector.createEfficientBitVector(arena, bitVectorSegment, vecLen);
             long[] results = runAll(instructions, bitVector);
             Duration duration = Duration.between(start, Instant.now());
             String collect = Arrays.stream(results)

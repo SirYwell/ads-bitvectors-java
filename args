@@ -1,0 +1,1 @@
+-XX:+UseParallelGC -XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=compile-commands.json -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0

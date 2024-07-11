@@ -1,0 +1,1 @@
+java @args --module-path build/libs/* --module bitvectors/de.sirywell.bitvectors.Main "$@"
