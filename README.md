@@ -18,3 +18,7 @@ Once the project is compiled, you can use the `run.sh` to simply run it:
 ```shell
 ./run.sh <input-file> <output-file>
 ```
+
+# Project Overview
+
+The relevant file is [EfficientBitVector.java](/src/main/java/de/sirywell/bitvectors/EfficientBitVector.java).

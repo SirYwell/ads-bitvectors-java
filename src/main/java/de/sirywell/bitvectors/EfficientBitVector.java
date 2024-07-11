@@ -36,12 +36,13 @@ import static java.nio.ByteOrder.nativeOrder;
  * Additionally, we store a bitset of size 256 that denotes an overflow: We basically store 9-bit numbers,
  * but it's simpler to split up their layout into 8 + 1.
  * <p/>
- * Select is more tricky. We store level0 indexes in a list.
+ * Select is more tricky. We store level0 indexes in a list, for both 0 bits and 1 bits. These list entries
+ * help us to select the relevant super block quickly.
  *
- * @param segment the actual bit vector data
- * @param rankLookup the rank lookup data
+ * @param segment      the actual bit vector data
+ * @param rankLookup   the rank lookup data
  * @param selectLookup the select lookup data
- * @param bitSize the number of bits the bit vector consists of
+ * @param bitSize      the number of bits the bit vector consists of
  */
 record EfficientBitVector(
         MemorySegment segment,
@@ -52,31 +53,51 @@ record EfficientBitVector(
     public static final String RANK_SUPER_BLOCK_NAME = "superBlock";
     public static final String RANK_BLOCK_SEQUENCE_NAME = "blockSequence";
     public static final String RANK_BLOCK_OVERFLOW = "overflow";
+    /**
+     * The layout for the additional data of a single super block + its blocks.
+     */
     private static final StructLayout RANK_CACHE_LAYOUT = MemoryLayout.structLayout(
             ValueLayout.JAVA_LONG.withName(RANK_SUPER_BLOCK_NAME),
             MemoryLayout.sequenceLayout(256, ValueLayout.JAVA_BYTE).withName(RANK_BLOCK_SEQUENCE_NAME),
             MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE).withName(RANK_BLOCK_OVERFLOW)
     );
+
     // we can initialize the layout with a large size to use it for any rank rankLookup segment
     private static final SequenceLayout RANK_CACHE_LIST = MemoryLayout.sequenceLayout(
             Long.MAX_VALUE / RANK_CACHE_LAYOUT.byteSize(),
             RANK_CACHE_LAYOUT
     );
+
+    /**
+     * An accessor to the value stored for a super block at a specific index.
+     */
     private static final VarHandle RANK_SUPER_BLOCK_VALUE_HANDLE = insertCoordinates(RANK_CACHE_LIST.varHandle(
             MemoryLayout.PathElement.sequenceElement(),
             MemoryLayout.PathElement.groupElement(RANK_SUPER_BLOCK_NAME)
     ), 1, 0);
+
+    /**
+     * An accessor for the value stored for a specific block in a specific super block.
+     */
     private static final VarHandle RANK_BLOCK_VALUE_HANDLE = insertCoordinates(RANK_CACHE_LIST.varHandle(
             MemoryLayout.PathElement.sequenceElement(),
             MemoryLayout.PathElement.groupElement(RANK_BLOCK_SEQUENCE_NAME),
             MemoryLayout.PathElement.sequenceElement()
     ), 1, 0);
+
+    /**
+     * A handle to calculate the beginning of the block values in the additional data of a super block.
+     */
     private static final MethodHandle RANK_BLOCK_VALUE_OFFSET_HANDLE = insertArguments(
             RANK_CACHE_LIST.byteOffsetHandle(
                     MemoryLayout.PathElement.sequenceElement(),
                     MemoryLayout.PathElement.groupElement(RANK_BLOCK_SEQUENCE_NAME),
                     MemoryLayout.PathElement.sequenceElement()
             ), 0, 0);
+
+    /**
+     * A handle to calculate the beginning of the block value overflow bits in the additional data of a super block.
+     */
     private static final MethodHandle RANK_BLOCK_OVERFLOW_BITSET_OFFSET_HANDLE = insertArguments(
             RANK_CACHE_LIST.byteOffsetHandle(
                     MemoryLayout.PathElement.sequenceElement(),
@@ -85,6 +106,10 @@ record EfficientBitVector(
     private static final long RANK_SUPER_BLOCK_SIZE = 1 << 16; // in bits
     private static final long RANK_BLOCK_SIZE = 1 << 8; // in bits
 
+    /**
+     * The layout representing a single index of the select list. It represents 2 6-byte integers.
+     * In the list, it means that 0 and 1 entries are interleaved.
+     */
     private static final UnionLayout SELECT_CACHE_LAYOUT = MemoryLayout.unionLayout(
             MemoryLayout.structLayout(
                     ValueLayout.JAVA_INT.withName("start"),
@@ -96,16 +121,25 @@ record EfficientBitVector(
                     ValueLayout.JAVA_INT
             ).withName("ones")
     );
+
     private static final SequenceLayout SELECT_CACHE_LIST = MemoryLayout.sequenceLayout(
             Long.MAX_VALUE / SELECT_CACHE_LAYOUT.byteSize(),
             SELECT_CACHE_LAYOUT
     );
+
+    /**
+     * A handle to calculate the offset of a specific entry in the 0 bit list of the additional select data.
+     */
     private static final MethodHandle SELECT_CACHE_0_HANDLE = insertArguments(
             SELECT_CACHE_LIST.byteOffsetHandle(
                     MemoryLayout.PathElement.sequenceElement(),
                     MemoryLayout.PathElement.groupElement("zeros"),
                     MemoryLayout.PathElement.groupElement("start")
             ), 0, 0);
+
+    /**
+     * A handle to calculate the offset of a specific entry in the 1 bit list of the additional select data.
+     */
     private static final MethodHandle SELECT_CACHE_1_HANDLE = insertArguments(
             SELECT_CACHE_LIST.byteOffsetHandle(
                     MemoryLayout.PathElement.sequenceElement(),
@@ -123,8 +157,11 @@ record EfficientBitVector(
         long onesSum = 0;
         long selectOneIndex = 0;
         long selectZeroIndex = 0;
+        // this bitset is just used for simplicity, temporarily.
+        // A long[7] would achieve the same.
         BitSet overflow = new BitSet(256);
         for (long superBlock = 0; superBlock < nOfSuperBlocks; superBlock++) {
+            // store the number of 1s up to this super block
             RANK_SUPER_BLOCK_VALUE_HANDLE.set(rankLookup, superBlock, onesSum);
             for (
                     long block = superBlock * RANK_SUPER_BLOCK_SIZE, local = 0;
@@ -202,6 +239,9 @@ record EfficientBitVector(
         return (long) RANK_SUPER_BLOCK_VALUE_HANDLE.get(this.rankLookup, superBlockIndex);
     }
 
+    /**
+     * Counts the bits in a block up to a specific byte.
+     */
     private long countBitsInBlock(long lastIncludedByteIndex, long actualBlockPos) {
         long blockIndex = actualBlockPos * BYTE_SPECIES.vectorByteSize();
         VectorMask<Byte> loadMask = BYTE_SPECIES.indexInRange(blockIndex, lastIncludedByteIndex);
@@ -209,13 +249,16 @@ record EfficientBitVector(
                 BYTE_SPECIES,
                 segment,
                 blockIndex,
-                nativeOrder(),
+                ORDER,
                 loadMask
         ).reinterpretAsLongs();
 
         return manyBits.lanewise(VectorOperators.BIT_COUNT).reduceLanes(VectorOperators.ADD);
     }
 
+    /**
+     * Sums up the entries of the block values of a specific super block up until a specific block.
+     */
     private long sumBlocksInSuperBlockUntil(long superBlockIndex, long remainingBitsInSuperBlock) {
         long offset = valueOffsetStart(superBlockIndex);
         long blockBytesToProcess = remainingBitsInSuperBlock / RANK_BLOCK_SIZE; // exclusive bound
@@ -241,7 +284,7 @@ record EfficientBitVector(
     private ByteVector byteVector(long offset, long index, long upperBound) {
         long fullIndex = offset + index;
         VectorMask<Byte> loadMask = BYTE_SPECIES.indexInRange(fullIndex, upperBound);
-        return ByteVector.fromMemorySegment(BYTE_SPECIES, rankLookup, fullIndex, nativeOrder(), loadMask);
+        return ByteVector.fromMemorySegment(BYTE_SPECIES, rankLookup, fullIndex, ORDER, loadMask);
     }
 
     private static ShortVector sumPairwise(ByteVector a) {
